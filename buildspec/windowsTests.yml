@@ -28,9 +28,9 @@ phases:
         $script:TEST_ARTIFACTS=Join-Path $env:TEMP testArtifacts
         $script:TEST_REPORTS=Join-Path $env:TEST_ARTIFACTS test-reports
 
-        function copyFolder($basedir, $subdir, $dest) {
+        function copyFolder($basedir, $subdir, $destdir) {
           $src = Join-Path "." -ChildPath $basedir | Join-Path -ChildPath $subdir
-          $dest = Join-Path $dest -ChildPath $basedir | Join-Path -ChildPath $subDir
+          $dest = Join-Path $destdir -ChildPath $basedir | Join-Path -ChildPath $subDir
           if( (Get-ChildItem $src -ErrorAction SilentlyContinue | Measure-Object).Count -ne 0) {
             Copy-Item $src $dest -Recurse -Force -ErrorAction SilentlyContinue
           }
