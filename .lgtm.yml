@@ -1,0 +1,3 @@
+extraction:
+  csharp:
+    buildless: true
