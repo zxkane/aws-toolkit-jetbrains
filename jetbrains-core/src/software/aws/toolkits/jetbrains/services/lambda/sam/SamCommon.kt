@@ -37,6 +37,9 @@ class SamCommon {
         fun getTemplateFromDirectory(projectRoot: VirtualFile): VirtualFile? {
             // Use Java File so we don't need to do a full VFS refresh
             val projectRootFile = VfsUtil.virtualToIoFile(projectRoot)
+            println("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+            println(projectRootFile.listFiles()?.joinToString("\n") { it.name })
+            println("${projectRootFile.name} is the folder \n\n\n\n\n")
             val yamlFiles = projectRootFile.listFiles(FileFilter {
                 it.isFile && it.name.endsWith("yaml") || it.name.endsWith("yml")
             })?.toList() ?: emptyList()
