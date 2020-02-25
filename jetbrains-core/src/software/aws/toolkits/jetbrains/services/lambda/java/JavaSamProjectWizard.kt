@@ -134,32 +134,6 @@ class SamHelloWorldGradle : JavaGradleSamProjectTemplate() {
     override fun getDescription() = message("sam.init.template.hello_world.description")
 
     override fun templateParameters(): TemplateParameters = AppBasedTemplate("hello-world", "gradle")
-
-    override fun postCreationAction(
-        settings: SamNewProjectSettings,
-        contentRoot: VirtualFile,
-        rootModel: ModifiableRootModel,
-        sourceCreatingProject: Project,
-        indicator: ProgressIndicator
-    ) {
-        super.postCreationAction(settings, contentRoot, rootModel, sourceCreatingProject, indicator)
-        val buildFile = locateBuildFile(contentRoot, "build.gradle") ?: return
-
-        val gradleProjectSettings = GradleProjectSettings().apply {
-            withQualifiedModuleNames()
-            externalProjectPath = buildFile.path
-        }
-
-        val externalSystemSettings = ExternalSystemApiUtil.getSettings(rootModel.project, GradleConstants.SYSTEM_ID)
-        externalSystemSettings.setLinkedProjectsSettings(setOf(gradleProjectSettings))
-
-        val importSpecBuilder = ImportSpecBuilder(rootModel.project, GradleConstants.SYSTEM_ID)
-            .forceWhenUptodate()
-            .useDefaultCallback()
-            .use(ProgressExecutionMode.IN_BACKGROUND_ASYNC)
-
-        ExternalSystemUtil.refreshProjects(importSpecBuilder)
-    }
 }
 
 class SamEventBridgeStarterAppGradle : JavaGradleSamProjectTemplate() {
