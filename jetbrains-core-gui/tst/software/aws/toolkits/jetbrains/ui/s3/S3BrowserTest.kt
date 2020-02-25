@@ -33,7 +33,7 @@ import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
-/*
+
 class S3BrowserTest : EmptyProjectTestCase() {
 
     private val profile = "Profile:default"
@@ -242,4 +242,3 @@ class S3BrowserTest : EmptyProjectTestCase() {
         const val NEW_JSON_FILE_NAME = "new-name.json"
     }
 }
-*/
