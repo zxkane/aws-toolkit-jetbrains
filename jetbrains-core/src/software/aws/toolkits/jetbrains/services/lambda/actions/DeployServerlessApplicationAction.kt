@@ -15,15 +15,17 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ModuleRootManager
 import com.intellij.openapi.vfs.VirtualFile
 import icons.AwsIcons
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import software.amazon.awssdk.services.cloudformation.CloudFormationClient
 import software.aws.toolkits.jetbrains.core.awsClient
 import software.aws.toolkits.jetbrains.core.credentials.ProjectAccountSettingsManager
 import software.aws.toolkits.jetbrains.core.executables.ExecutableInstance
 import software.aws.toolkits.jetbrains.core.executables.ExecutableManager
 import software.aws.toolkits.jetbrains.core.executables.getExecutable
-import software.aws.toolkits.jetbrains.services.cloudformation.stack.StackWindowManager
 import software.aws.toolkits.jetbrains.services.cloudformation.describeStack
 import software.aws.toolkits.jetbrains.services.cloudformation.executeChangeSetAndWait
+import software.aws.toolkits.jetbrains.services.cloudformation.stack.StackWindowManager
 import software.aws.toolkits.jetbrains.services.cloudformation.validateSamTemplateHasResources
 import software.aws.toolkits.jetbrains.services.cloudformation.validateSamTemplateLambdaRuntimes
 import software.aws.toolkits.jetbrains.services.lambda.deploy.DeployServerlessApplicationDialog
@@ -57,14 +59,14 @@ class DeployServerlessApplicationAction : AnAction(
             return
         }
 
-        ExecutableManager.getInstance().getExecutable<SamExecutable>().thenAccept { samExecutable ->
-            when (samExecutable) {
+        GlobalScope.launch {
+            when (val samExecutable = ExecutableManager.getInstance().getExecutable<SamExecutable>()) {
                 is ExecutableInstance.InvalidExecutable, is ExecutableInstance.UnresolvedExecutable -> {
                     notifySamCliNotValidError(
                         project = project,
                         content = (samExecutable as ExecutableInstance.BadExecutable).validationError
                     )
-                    return@thenAccept
+                    return@launch
                 }
             }
 
@@ -72,12 +74,12 @@ class DeployServerlessApplicationAction : AnAction(
             if (templateFile == null) {
                 Exception(message("serverless.application.deploy.toast.template_file_failure"))
                     .notifyError(message("aws.notification.title"), project)
-                return@thenAccept
+                return@launch
             }
 
             validateTemplateFile(project, templateFile)?.let {
                 notifyError(content = it, project = project)
-                return@thenAccept
+                return@launch
             }
 
             // Force save before we deploy
@@ -87,7 +89,7 @@ class DeployServerlessApplicationAction : AnAction(
             stackDialog.show()
             if (!stackDialog.isOK) {
                 SamTelemetry.deploy(project, Result.CANCELLED)
-                return@thenAccept
+                return@launch
             }
 
             saveSettings(project, templateFile, stackDialog)

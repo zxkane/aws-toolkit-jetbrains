@@ -3,11 +3,12 @@
 
 package software.aws.toolkits.jetbrains.services.clouddebug.execution.steps
 
+import kotlinx.coroutines.runBlocking
 import software.aws.toolkits.core.utils.AttributeBagKey
+import software.aws.toolkits.jetbrains.core.executables.CloudDebugExecutable
 import software.aws.toolkits.jetbrains.core.executables.ExecutableInstance
 import software.aws.toolkits.jetbrains.core.executables.ExecutableManager
 import software.aws.toolkits.jetbrains.core.executables.getExecutable
-import software.aws.toolkits.jetbrains.core.executables.CloudDebugExecutable
 import software.aws.toolkits.jetbrains.services.clouddebug.CloudDebugResolver
 import software.aws.toolkits.jetbrains.services.clouddebug.execution.Context
 import software.aws.toolkits.jetbrains.services.clouddebug.execution.MessageEmitter
@@ -26,13 +27,13 @@ class CloudDebugCliValidate : Step() {
          * Load and validate the cloud-debug executable. If it is not found or fails to validate, it throws a RuntimeException.
          */
         fun validateAndLoadCloudDebugExecutable(): ExecutableInstance.Executable =
-            ExecutableManager.getInstance().getExecutable<CloudDebugExecutable>().thenApply {
-                when (it) {
+            runBlocking {
+                when (val it = ExecutableManager.getInstance().getExecutable<CloudDebugExecutable>()) {
                     is ExecutableInstance.Executable -> it
                     is ExecutableInstance.UnresolvedExecutable -> throw RuntimeException(message("cloud_debug.step.clouddebug.resolution.fail"))
                     is ExecutableInstance.InvalidExecutable -> throw RuntimeException(it.validationError)
                 }
-            }.toCompletableFuture().join()
+            }
 
         val EXECUTABLE_ATTRIBUTE = AttributeBagKey.create<ExecutableInstance.Executable>("clouddebug.executable")
     }

@@ -16,6 +16,7 @@ import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.psi.PsiElement
 import com.intellij.util.io.Compressor
+import kotlinx.coroutines.runBlocking
 import software.amazon.awssdk.services.lambda.model.Runtime
 import software.aws.toolkits.core.utils.exists
 import software.aws.toolkits.core.utils.getLogger
@@ -33,7 +34,6 @@ import software.aws.toolkits.resources.message
 import java.io.File
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.ExecutionException
 
 abstract class LambdaBuilder {
 
@@ -93,7 +93,8 @@ abstract class LambdaBuilder {
                 )
         }
 
-        ExecutableManager.getInstance().getExecutable<SamExecutable>().thenApply {
+        return runBlocking {
+            val it = ExecutableManager.getInstance().getExecutable<SamExecutable>()
             val samExecutable = when (it) {
                 is ExecutableInstance.Executable -> it
                 else -> {
@@ -138,6 +139,8 @@ abstract class LambdaBuilder {
                 PathMapping(buildDir.resolve(logicalId).toString(), "/")
             )
 
+            var buildLambda: BuiltLambda? = null
+            var exception: Exception? = null
             val processHandler = ProcessHandlerFactory.getInstance().createColoredProcessHandler(commandLine)
             processHandler.addProcessListener(object : ProcessAdapter() {
                 override fun onTextAvailable(event: ProcessEvent, outputType: Key<*>) {
@@ -150,18 +153,16 @@ abstract class LambdaBuilder {
                         val builtTemplate = buildDir.resolve("template.yaml")
 
                         if (!builtTemplate.exists()) {
-                            future.completeExceptionally(IllegalStateException("Failed to locate built template, $builtTemplate does not exist"))
-                        }
-
-                        future.complete(
-                            BuiltLambda(
+                            exception = IllegalStateException("Failed to locate built template, $builtTemplate does not exist")
+                        } else {
+                            buildLambda = BuiltLambda(
                                 builtTemplate,
                                 buildDir.resolve(logicalId),
                                 pathMappings
                             )
-                        )
+                        }
                     } else {
-                        future.completeExceptionally(IllegalStateException(message("sam.build.failed")))
+                        exception = IllegalStateException(message("sam.build.failed"))
                     }
                 }
             })
@@ -169,12 +170,13 @@ abstract class LambdaBuilder {
             onStart.invoke(processHandler)
 
             processHandler.startNotify()
-        }
+            processHandler.waitFor()
 
-        return try {
-            future.get()
-        } catch (e: ExecutionException) {
-            throw e.cause ?: e
+            if(exception != null) {
+                throw exception!!
+            }
+
+            return@runBlocking buildLambda!!
         }
     }
 

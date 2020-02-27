@@ -14,6 +14,8 @@ import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import icons.TerminalIcons
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import org.jetbrains.plugins.terminal.LocalTerminalDirectRunner
 import org.jetbrains.plugins.terminal.TerminalTabState
 import org.jetbrains.plugins.terminal.TerminalView
@@ -66,7 +68,8 @@ class StartRemoteShellAction(private val project: Project, private val container
         val title = message("cloud_debug.ecs.remote_shell.start")
         val startTime = Instant.now()
 
-        ExecutableManager.getInstance().getExecutable<CloudDebugExecutable>().thenAccept { cloudDebugExecutable ->
+        GlobalScope.launch {
+            val cloudDebugExecutable = ExecutableManager.getInstance().getExecutable<CloudDebugExecutable>()
             ProgressManager.getInstance().run(object : Task.Backgroundable(project, title, false) {
                 override fun run(indicator: ProgressIndicator) {
                     if (cloudDebugExecutable !is ExecutableInstance.Executable) {
