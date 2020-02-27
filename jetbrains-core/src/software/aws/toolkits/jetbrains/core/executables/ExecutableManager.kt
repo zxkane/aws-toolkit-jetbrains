@@ -4,7 +4,6 @@
 package software.aws.toolkits.jetbrains.core.executables
 
 import com.intellij.execution.configurations.GeneralCommandLine
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.ServiceManager
 import com.intellij.openapi.components.State
@@ -14,6 +13,10 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.StartupActivity
 import com.intellij.util.io.exists
 import com.intellij.util.io.lastModified
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import software.aws.toolkits.core.utils.getLogger
 import software.aws.toolkits.core.utils.warn
 import software.aws.toolkits.jetbrains.core.executables.ExecutableInstance.ExecutableWithPath
@@ -21,8 +24,6 @@ import software.aws.toolkits.resources.message
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.attribute.FileTime
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.CompletionStage
 
 // A startup activity to load the executable manager at startup. This validates the executables if they exist on disk
 // which allows us to use them without explicitly loading loading them.
@@ -36,10 +37,10 @@ class ExecutableLoader : StartupActivity, DumbAware {
 }
 
 interface ExecutableManager {
-    fun getExecutable(type: ExecutableType<*>): CompletionStage<ExecutableInstance>
+    suspend fun getExecutable(type: ExecutableType<*>): ExecutableInstance
     fun getExecutableIfPresent(type: ExecutableType<*>): ExecutableInstance
     fun validateExecutablePath(type: ExecutableType<*>, path: Path): ExecutableInstance
-    fun setExecutablePath(type: ExecutableType<*>, path: Path): CompletionStage<ExecutableInstance>
+    suspend fun setExecutablePath(type: ExecutableType<*>, path: Path): ExecutableInstance
     fun removeExecutable(type: ExecutableType<*>)
 
     companion object {
@@ -48,9 +49,9 @@ interface ExecutableManager {
     }
 }
 
-inline fun <reified T : ExecutableType<*>> ExecutableManager.getExecutable() = getExecutable(ExecutableType.getInstance<T>())
+suspend inline fun <reified T : ExecutableType<*>> ExecutableManager.getExecutable() = getExecutable(ExecutableType.getInstance<T>())
+suspend inline fun <reified T : ExecutableType<*>> ExecutableManager.setExecutablePath(path: Path) = setExecutablePath(ExecutableType.getInstance<T>(), path)
 inline fun <reified T : ExecutableType<*>> ExecutableManager.getExecutableIfPresent() = getExecutableIfPresent(ExecutableType.getInstance<T>())
-inline fun <reified T : ExecutableType<*>> ExecutableManager.setExecutablePath(path: Path) = setExecutablePath(ExecutableType.getInstance<T>(), path)
 
 @State(name = "executables", storages = [Storage("aws.xml")])
 class DefaultExecutableManager : PersistentStateComponent<ExecutableStateList>, ExecutableManager {
@@ -65,7 +66,9 @@ class DefaultExecutableManager : PersistentStateComponent<ExecutableStateList>, 
             internalState[id] = Triple(it, null, null)
         }
         ExecutableType.executables().forEach {
-            getExecutable(it)
+            GlobalScope.launch {
+                getExecutable(it)
+            }
         }
     }
 
@@ -80,9 +83,12 @@ class DefaultExecutableManager : PersistentStateComponent<ExecutableStateList>, 
         // If the executable is unresolved, either the path does not exist, or there is no
         // entry in the cache. In this case, always try to get the executable out of the cache.
         if (instance == null) {
-            getExecutable(type).exceptionally {
-                LOG.warn(it) { "Error thrown while updating executable cache" }
-                null
+            GlobalScope.launch {
+                try {
+                    getExecutable(type)
+                } catch (e: Exception) {
+                    LOG.warn(e) { "Error thrown while updating executable cache" }
+                }
             }
             return ExecutableInstance.UnresolvedExecutable(message("executableCommon.missing_executable", type.displayName))
         }
@@ -91,9 +97,12 @@ class DefaultExecutableManager : PersistentStateComponent<ExecutableStateList>, 
         // runs of update are eventually consistent, and called often, so we do not have to keep track of the future
         val lastModified = (instance as ExecutableWithPath).executablePath.lastModifiedOrNull()
         if (lastModified != internalState[type.id]?.third) {
-            getExecutable(type).exceptionally {
-                LOG.warn(it) { "Error thrown while updating executable cache" }
-                null
+            GlobalScope.launch {
+                try {
+                    getExecutable(type)
+                } catch (e: Exception) {
+                    LOG.warn(e) { "Error thrown while updating executable cache" }
+                }
             }
         }
         return instance
@@ -101,39 +110,24 @@ class DefaultExecutableManager : PersistentStateComponent<ExecutableStateList>, 
 
     override fun validateExecutablePath(type: ExecutableType<*>, path: Path): ExecutableInstance = validate(type, path, false)
 
-    override fun getExecutable(type: ExecutableType<*>): CompletionStage<ExecutableInstance> {
-        val future = CompletableFuture<ExecutableInstance>()
-        ApplicationManager.getApplication().executeOnPooledThread {
-            val loaded = internalState[type.id]
-            if (loaded == null) {
-                future.complete(load(type, null))
-                return@executeOnPooledThread
-            }
+    override suspend fun getExecutable(type: ExecutableType<*>): ExecutableInstance = withContext(Dispatchers.IO) {
+        val loaded = internalState[type.id] ?: return@withContext load(type, null)
 
-            val (persisted, instance, lastValidated) = loaded
-            val lastKnownFileTime = persisted.lastKnownFileTime?.let { FileTime.fromMillis(it) }
+        val (persisted, instance, lastValidated) = loaded
+        val lastKnownFileTime = persisted.lastKnownFileTime?.let { FileTime.fromMillis(it) }
 
-            future.complete(
-                when {
-                    instance is ExecutableWithPath && persisted.autoResolved == true && instance.executablePath.isNewerThan(lastKnownFileTime) ->
-                        validateAndSave(type, instance.executablePath, autoResolved = false)
-                    instance is ExecutableWithPath && instance.executablePath.lastModifiedOrNull() == lastValidated ->
-                        instance
-                    else ->
-                        load(type, persisted)
-                }
-            )
+        return@withContext when {
+            instance is ExecutableWithPath && persisted.autoResolved == true && instance.executablePath.isNewerThan(lastKnownFileTime) ->
+                validateAndSave(type, instance.executablePath, autoResolved = false)
+            instance is ExecutableWithPath && instance.executablePath.lastModifiedOrNull() == lastValidated ->
+                instance
+            else ->
+                load(type, persisted)
         }
-        return future
     }
 
-    override fun setExecutablePath(type: ExecutableType<*>, path: Path): CompletionStage<ExecutableInstance> {
-        val future = CompletableFuture<ExecutableInstance>()
-        ApplicationManager.getApplication().executeOnPooledThread {
-            val executable = validateAndSave(type, path, false)
-            future.complete(executable)
-        }
-        return future
+    override suspend fun setExecutablePath(type: ExecutableType<*>, path: Path): ExecutableInstance = withContext(Dispatchers.IO) {
+        return@withContext validateAndSave(type, path, false)
     }
 
     override fun removeExecutable(type: ExecutableType<*>) {
