@@ -18,6 +18,7 @@ import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.ExceptionUtil
+import kotlinx.coroutines.async
 import software.aws.toolkits.core.utils.getLogger
 import software.aws.toolkits.core.utils.warn
 import software.aws.toolkits.jetbrains.core.credentials.ProjectAccountSettingsManager
@@ -195,7 +196,11 @@ class SamDeployDialog(
         envVars.putAll(region.toEnvironmentVariables())
         envVars.putAll(credentialsProvider.resolveCredentials().toEnvironmentVariables())
 
-        return ExecutableManager.getInstance().getExecutable<SamExecutable>().thenApply {
+        val job = async {
+            ExecutableManager.getInstance().getExecutable<SamExecutable>()
+        }
+
+        return .thenApply {
             val samExecutable = when (it) {
                 is ExecutableInstance.Executable -> it
                 else -> throw RuntimeException((it as? ExecutableInstance.BadExecutable)?.validationError)

@@ -33,7 +33,6 @@ import software.aws.toolkits.jetbrains.services.lambda.sam.SamTemplateUtils
 import software.aws.toolkits.resources.message
 import java.io.File
 import java.nio.file.Path
-import java.util.concurrent.CompletableFuture
 
 abstract class LambdaBuilder {
 
@@ -74,8 +73,6 @@ abstract class LambdaBuilder {
         samOptions: SamOptions,
         onStart: (ProcessHandler) -> Unit = {}
     ): BuiltLambda {
-        val future = CompletableFuture<BuiltLambda>()
-
         val functions = SamTemplateUtils.findFunctionsFromTemplate(
             module.project,
             templateLocation.toFile()
@@ -94,12 +91,10 @@ abstract class LambdaBuilder {
         }
 
         return runBlocking {
-            val it = ExecutableManager.getInstance().getExecutable<SamExecutable>()
-            val samExecutable = when (it) {
-                is ExecutableInstance.Executable -> it
+            val samExecutable = when (val instance = ExecutableManager.getInstance().getExecutable<SamExecutable>()) {
+                is ExecutableInstance.Executable -> instance
                 else -> {
-                    future.completeExceptionally(RuntimeException((it as? ExecutableInstance.BadExecutable)?.validationError ?: ""))
-                    return@thenApply
+                    throw RuntimeException((instance as? ExecutableInstance.BadExecutable)?.validationError ?: "")
                 }
             }
 
@@ -172,7 +167,7 @@ abstract class LambdaBuilder {
             processHandler.startNotify()
             processHandler.waitFor()
 
-            if(exception != null) {
+            if (exception != null) {
                 throw exception!!
             }
 
