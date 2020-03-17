@@ -1,0 +1,31 @@
+{
+    "types": [
+        {
+            "name": "toggle",
+            "type": "boolean",
+            "description": "True if set, false if unset"
+        }
+    ],
+    "metrics": [
+        {
+            "name": "cloudwatchlogs_open",
+            "description": "Open the CloudWatch Logs tool window",
+            "metadata": [{"type": "result"}]
+        },
+        {
+            "name": "cloudwatchlogs_openLogStream",
+            "description": "Called when opening the log stream",
+            "metadata": [{"type": "toggle"}]
+        },
+        {
+            "name": "cloudwatchlogs_wrap",
+            "description": "When log wrapping is turned off/on",
+            "metadata": [{"type": "toggle"}]
+        },
+        {
+            "name": "cloudwatchlogs_stream",
+            "description": "When log streaming is turned on/off",
+            "metadata": [{"type": "toggle"}]
+        }
+    ]
+}

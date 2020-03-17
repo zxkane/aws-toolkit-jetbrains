@@ -34,7 +34,7 @@ configurations {
 }
 
 task generateTelemetry(type: GenerateTelemetry) {
-    inputFiles = []
+    inputFiles = [file("${project.projectDir}/extratelemetry.json")]
     outputDirectory = file("${project.buildDir}/generated-src")
 }
 compileKotlin.dependsOn(generateTelemetry)
