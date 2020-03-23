@@ -10,6 +10,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.PlatformDataKeys
 import com.intellij.openapi.project.DumbAware
 import com.intellij.ui.table.TableView
+import software.amazon.awssdk.services.cloudwatchlogs.model.OutputLogEvent
 import software.aws.toolkits.jetbrains.services.cloudwatch.logs.CloudWatchLogWindow
 import software.aws.toolkits.jetbrains.services.cloudwatch.logs.LogStreamEntry
 import software.aws.toolkits.resources.message
@@ -34,7 +35,7 @@ class ShowLogsAroundGroup(
 private class ShowLogsAround(
     private val logGroup: String,
     private val logStream: String,
-    private val treeTable: TableView<LogStreamEntry>,
+    private val treeTable: TableView<OutputLogEvent>,
     timeMessage: String,
     private val duration: Duration
 ) :

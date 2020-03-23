@@ -15,6 +15,8 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.ui.components.panels.Wrapper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import software.amazon.awssdk.services.cloudwatchlogs.model.FilteredLogEvent
+import software.amazon.awssdk.services.cloudwatchlogs.model.OutputLogEvent
 import software.aws.toolkits.jetbrains.core.credentials.activeCredentialProvider
 import software.aws.toolkits.jetbrains.core.credentials.activeRegion
 import software.aws.toolkits.jetbrains.services.cloudwatch.logs.LogStreamActor
@@ -22,6 +24,8 @@ import software.aws.toolkits.jetbrains.services.cloudwatch.logs.actions.OpenCurr
 import software.aws.toolkits.jetbrains.services.cloudwatch.logs.actions.ShowLogsAroundGroup
 import software.aws.toolkits.jetbrains.services.cloudwatch.logs.actions.TailLogs
 import software.aws.toolkits.jetbrains.services.cloudwatch.logs.actions.WrapLogs
+import software.aws.toolkits.jetbrains.services.cloudwatch.logs.actions.buildStringFromLogs
+import software.aws.toolkits.jetbrains.services.cloudwatch.logs.actions.buildStringFromLogsOutput
 import software.aws.toolkits.jetbrains.utils.ApplicationThreadPoolScope
 import software.aws.toolkits.jetbrains.utils.getCoroutineUiContext
 import software.aws.toolkits.resources.message
@@ -46,8 +50,8 @@ class CloudWatchLogStream(
 
     private val edtContext = getCoroutineUiContext(disposable = this)
 
-    private val logStreamTable: LogStreamTable = LogStreamTable(project, logGroup, logStream, LogStreamTable.TableType.LIST)
-    private var searchStreamTable: LogStreamTable? = null
+    private val logStreamTable: LogStreamTable<OutputLogEvent> = LogStreamTable(project, logGroup, logStream, OutputLogEvent::class.java)
+    private var searchStreamTable: LogStreamTable<FilteredLogEvent>? = null
 
     init {
         logsPanel.setContent(logStreamTable.component)
@@ -88,7 +92,7 @@ class CloudWatchLogStream(
                     }
                 } else {
                     // This is thread safe because the actionPerformed is run on the UI thread
-                    val table = LogStreamTable(project, logGroup, logStream, LogStreamTable.TableType.FILTER)
+                    val table = LogStreamTable(project, logGroup, logStream, FilteredLogEvent::class.java)
                     Disposer.register(this@CloudWatchLogStream, table)
                     searchStreamTable = table
                     launch(edtContext) {
@@ -106,7 +110,8 @@ class CloudWatchLogStream(
     private fun addAction() {
         val actionGroup = DefaultActionGroup()
         actionGroup.add(OpenCurrentInEditor(project, logStream) {
-            searchStreamTable?.logsTable?.listTableModel?.items ?: logStreamTable.logsTable.listTableModel.items
+            searchStreamTable?.logsTable?.listTableModel?.items?.buildStringFromLogsOutput()
+                ?: logStreamTable.logsTable.listTableModel.items.buildStringFromLogs()
         })
         actionGroup.add(Separator())
         actionGroup.add(ShowLogsAroundGroup(logGroup, logStream, logStreamTable.logsTable))
@@ -121,7 +126,8 @@ class CloudWatchLogStream(
     private fun addActionToolbar() {
         val actionGroup = DefaultActionGroup()
         actionGroup.add(OpenCurrentInEditor(project, logStream) {
-            searchStreamTable?.logsTable?.listTableModel?.items ?: logStreamTable.logsTable.listTableModel.items
+            searchStreamTable?.logsTable?.listTableModel?.items?.buildStringFromLogsOutput()
+                ?: logStreamTable.logsTable.listTableModel.items.buildStringFromLogs()
         })
         actionGroup.add(TailLogs { searchStreamTable?.channel ?: logStreamTable.channel })
         actionGroup.add(WrapLogs { searchStreamTable?.logsTable ?: logStreamTable.logsTable })

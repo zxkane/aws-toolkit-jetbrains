@@ -12,8 +12,9 @@ import com.intellij.util.ui.ListTableModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import software.amazon.awssdk.services.cloudwatchlogs.model.FilteredLogEvent
+import software.amazon.awssdk.services.cloudwatchlogs.model.OutputLogEvent
 import software.aws.toolkits.jetbrains.services.cloudwatch.logs.LogStreamActor
-import software.aws.toolkits.jetbrains.services.cloudwatch.logs.LogStreamEntry
 import software.aws.toolkits.jetbrains.services.cloudwatch.logs.LogStreamFilterActor
 import software.aws.toolkits.jetbrains.services.cloudwatch.logs.LogStreamListActor
 import software.aws.toolkits.jetbrains.utils.ApplicationThreadPoolScope
@@ -23,28 +24,23 @@ import javax.swing.JScrollPane
 import javax.swing.JTable
 import javax.swing.SortOrder
 
-class LogStreamTable(
+class LogStreamTable<T : Any>(
     val project: Project,
     logGroup: String,
     logStream: String,
-    type: TableType
+    typeOfT: Class<T>
 ) :
     CoroutineScope by ApplicationThreadPoolScope("LogStreamTable"), Disposable {
 
-    enum class TableType {
-        LIST,
-        FILTER
-    }
-
     val component: JScrollPane
     val channel: Channel<LogStreamActor.Message>
-    val logsTable: TableView<LogStreamEntry>
-    private val logStreamActor: LogStreamActor
+    val logsTable: TableView<T>
+    private val logStreamActor: LogStreamActor<*>
 
     init {
-        val model = ListTableModel<LogStreamEntry>(
+        val model = ListTableModel<T>(
             arrayOf(LogStreamDateColumn(), LogStreamMessageColumn()),
-            mutableListOf<LogStreamEntry>(),
+            mutableListOf<T>(),
             // Don't sort in the model because the requests come sorted
             -1,
             SortOrder.UNSORTED
@@ -62,9 +58,11 @@ class LogStreamTable(
 
         component = ScrollPaneFactory.createScrollPane(logsTable)
 
-        logStreamActor = when (type) {
-            TableType.LIST -> LogStreamListActor(project, logsTable, logGroup, logStream)
-            TableType.FILTER -> LogStreamFilterActor(project, logsTable, logGroup, logStream)
+        logStreamActor = when (typeOfT) {
+            // These as's are always correct, but are needed because we can't reify T
+            OutputLogEvent::class -> LogStreamListActor(project, logsTable as TableView<OutputLogEvent>, logGroup, logStream)
+            FilteredLogEvent::class -> LogStreamFilterActor(project, logsTable as TableView<FilteredLogEvent>, logGroup, logStream)
+            else -> throw IllegalStateException("LogStreamTable attempted to be made that was not OutputLogEvent or FilteredLogEvent")
         }
         Disposer.register(this@LogStreamTable, logStreamActor)
         channel = logStreamActor.channel

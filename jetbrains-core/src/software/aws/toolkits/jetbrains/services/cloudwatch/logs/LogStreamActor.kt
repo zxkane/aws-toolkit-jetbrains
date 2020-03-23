@@ -16,7 +16,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import software.amazon.awssdk.services.cloudwatchlogs.CloudWatchLogsAsyncClient
 import software.amazon.awssdk.services.cloudwatchlogs.model.FilterLogEventsRequest
+import software.amazon.awssdk.services.cloudwatchlogs.model.FilteredLogEvent
 import software.amazon.awssdk.services.cloudwatchlogs.model.GetLogEventsRequest
+import software.amazon.awssdk.services.cloudwatchlogs.model.OutputLogEvent
 import software.aws.toolkits.core.utils.error
 import software.aws.toolkits.core.utils.getLogger
 import software.aws.toolkits.jetbrains.core.awsClient
@@ -26,11 +28,9 @@ import software.aws.toolkits.jetbrains.utils.notifyError
 import software.aws.toolkits.resources.message
 import java.time.Duration
 
-sealed class LogStreamActor(
+sealed class LogStreamActor<T : Any>(
     private val project: Project,
-    private val table: TableView<LogStreamEntry>,
-    protected val logGroup: String,
-    protected val logStream: String
+    private val table: TableView<T>
 ) : CoroutineScope by ApplicationThreadPoolScope("CloudWatchLogsStream"), Disposable {
     val channel = Channel<Message>()
 
@@ -38,6 +38,7 @@ sealed class LogStreamActor(
     protected var nextBackwardToken: String? = null
     protected var nextForwardToken: String? = null
     protected abstract val emptyText: String
+    protected abstract val errorText: String
 
     private val edtContext = getCoroutineUiContext(disposable = this)
     private val exceptionHandler = CoroutineExceptionHandler { _, e ->
@@ -84,14 +85,14 @@ sealed class LogStreamActor(
         }
     }
 
-    protected suspend fun loadAndPopulate(loadBlock: suspend () -> List<LogStreamEntry>) {
+    protected suspend fun loadAndPopulate(loadBlock: suspend () -> List<T>) {
         try {
             val items = loadBlock()
             withContext(edtContext) {
                 table.listTableModel.addRows(items)
             }
         } catch (e: Exception) {
-            val errorMessage = message("cloudwatch.logs.failed_to_load_stream", logStream)
+            val errorMessage = errorText
             LOG.error(e) { errorMessage }
             notifyError(title = errorMessage, project = project)
             withContext(edtContext) { table.emptyText.text = errorMessage }
@@ -106,7 +107,7 @@ sealed class LogStreamActor(
     protected abstract suspend fun loadInitial()
     protected abstract suspend fun loadInitialRange(startTime: Long, duration: Duration)
     protected abstract suspend fun loadInitialFilter(queryString: String)
-    protected abstract suspend fun loadMore(nextToken: String?, saveForwardToken: Boolean = false, saveBackwardToken: Boolean = false): List<LogStreamEntry>
+    protected abstract suspend fun loadMore(nextToken: String?, saveForwardToken: Boolean = false, saveBackwardToken: Boolean = false): List<T>
 
     override fun dispose() {
         channel.close()
@@ -114,17 +115,18 @@ sealed class LogStreamActor(
     }
 
     companion object {
-        private val LOG = getLogger<LogStreamActor>()
+        private val LOG = getLogger<LogStreamActor<*>>()
     }
 }
 
 class LogStreamFilterActor(
     project: Project,
-    table: TableView<LogStreamEntry>,
-    logGroup: String,
-    logStream: String
-) : LogStreamActor(project, table, logGroup, logStream) {
+    table: TableView<FilteredLogEvent>,
+    private val logGroup: String,
+    private val logStream: String
+) : LogStreamActor<FilteredLogEvent>(project, table) {
     override val emptyText = message("cloudwatch.logs.no_events_query", logStream)
+    override val errorText = message("cloudwatch.logs.failed_to_load_stream", logStream)
 
     override suspend fun loadInitial() {
         throw IllegalStateException("FilterActor can only loadInitialFilter")
@@ -144,7 +146,7 @@ class LogStreamFilterActor(
         throw IllegalStateException("FilterActor can only loadInitialFilter")
     }
 
-    override suspend fun loadMore(nextToken: String?, saveForwardToken: Boolean, saveBackwardToken: Boolean): List<LogStreamEntry> {
+    override suspend fun loadMore(nextToken: String?, saveForwardToken: Boolean, saveBackwardToken: Boolean): List<FilteredLogEvent> {
         // loading backwards doesn't make sense in this context, so just skip the event
         if (saveBackwardToken) {
             return listOf()
@@ -160,9 +162,9 @@ class LogStreamFilterActor(
         return getSearchLogEvents(request)
     }
 
-    private suspend fun getSearchLogEvents(request: FilterLogEventsRequest): List<LogStreamEntry> {
+    private suspend fun getSearchLogEvents(request: FilterLogEventsRequest): List<FilteredLogEvent> {
         val response = client.filterLogEvents(request).asDeferred().await()
-        val events = response.events().filterNotNull().map { it.toLogStreamEntry() }
+        val events = response.events().filterNotNull()
         nextForwardToken = response.nextToken()
 
         return events
@@ -171,12 +173,13 @@ class LogStreamFilterActor(
 
 class LogStreamListActor(
     project: Project,
-    table: TableView<LogStreamEntry>,
-    logGroup: String,
-    logStream: String
+    table: TableView<OutputLogEvent>,
+    private val logGroup: String,
+    private val logStream: String
 ) :
-    LogStreamActor(project, table, logGroup, logStream) {
+    LogStreamActor<OutputLogEvent>(project, table) {
     override val emptyText = message("cloudwatch.logs.no_events")
+    override val errorText = message("cloudwatch.logs.failed_to_load_stream", logStream)
     override suspend fun loadInitial() {
         val request = GetLogEventsRequest
             .builder()
@@ -203,7 +206,7 @@ class LogStreamListActor(
         throw IllegalStateException("GetActor can not loadInitialFilter")
     }
 
-    override suspend fun loadMore(nextToken: String?, saveForwardToken: Boolean, saveBackwardToken: Boolean): List<LogStreamEntry> {
+    override suspend fun loadMore(nextToken: String?, saveForwardToken: Boolean, saveBackwardToken: Boolean): List<OutputLogEvent> {
         val request = GetLogEventsRequest
             .builder()
             .logGroupName(logGroup)
@@ -219,9 +222,9 @@ class LogStreamListActor(
         request: GetLogEventsRequest,
         saveForwardToken: Boolean = false,
         saveBackwardToken: Boolean = false
-    ): List<LogStreamEntry> {
+    ): List<OutputLogEvent> {
         val response = client.getLogEvents(request).asDeferred().await()
-        val events = response.events().filterNotNull().map { it.toLogStreamEntry() }
+        val events = response.events().filterNotNull()
         if (saveForwardToken) {
             nextForwardToken = response.nextForwardToken()
         }
