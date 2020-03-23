@@ -49,27 +49,37 @@ class LogStreamDateColumn : ColumnInfo<LogStreamEntry, String>(message("general.
 }
 
 class LogStreamMessageColumn : ColumnInfo<LogStreamEntry, String>(message("general.message")) {
-    override fun valueOf(item: LogStreamEntry?): String? = item?.message
-    override fun isCellEditable(item: LogStreamEntry?): Boolean = false
-}
-
-class WrappingLogStreamMessageColumn : ColumnInfo<LogStreamEntry, String>(message("general.message")) {
     private val renderer = WrappingLogStreamMessageRenderer()
+    fun setWrap(wrap: Boolean) {
+        renderer.wrap = wrap
+    }
+
     override fun valueOf(item: LogStreamEntry?): String? = item?.message
     override fun isCellEditable(item: LogStreamEntry?): Boolean = false
     override fun getRenderer(item: LogStreamEntry?): TableCellRenderer? = renderer
 }
 
 private class WrappingLogStreamMessageRenderer : TableCellRenderer {
+    var wrap: Boolean = false
+        set(value) {
+            field = value
+            componentCache = mutableMapOf()
+        }
+    private var componentCache = mutableMapOf<Pair<Int, Int>, Component>()
     override fun getTableCellRendererComponent(table: JTable, value: Any?, isSelected: Boolean, hasFocus: Boolean, row: Int, column: Int): Component {
+        val item = componentCache[Pair(row, column)]
+        if (item != null) {
+            return item
+        }
         val component = JBTextArea()
-        component.wrapStyleWord = true
-        component.lineWrap = true
+        component.wrapStyleWord = wrap
+        component.lineWrap = wrap
         component.text = (value as? String)?.trim()
         component.setSize(table.columnModel.getColumn(column).width, component.preferredSize.height)
         if (table.getRowHeight(row) != component.preferredSize.height) {
             table.setRowHeight(row, component.preferredSize.height)
         }
+        componentCache[Pair(row, column)] = component
         return component
     }
 }
