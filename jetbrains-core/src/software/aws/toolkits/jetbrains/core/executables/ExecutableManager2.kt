@@ -36,9 +36,21 @@ class ExecutableLoader2 : StartupActivity, DumbAware {
     }
 }
 
+data class ExecutableState(
+    var id: String? = null,
+    var executablePath: String? = null,
+    var autoResolved: Boolean? = false,
+    var lastKnownFileTime: Long? = null
+)
+
+interface Downloadable {
+    suspend fun updateAvailable(): Boolean
+    suspend fun downloadUpdate()
+}
+
 interface ExecutableManager2 {
-    fun getExecutable(type: ExecutableType<*>): ExecutableInstance
-    suspend fun getExecutableAndValidate(type: ExecutableType<*>, download: Boolean): ExecutableInstance
+    suspend fun getExecutable(type: ExecutableType<*>): ExecutableInstance
+    fun getExecutableCached(type: ExecutableType<*>): ExecutableInstance
     suspend fun setPath(type: ExecutableType<*>, path: Path): ExecutableInstance
     fun validatePath(type: ExecutableType<*>, path: Path): ExecutableInstance
     fun unset(type: ExecutableType<*>)
@@ -50,7 +62,7 @@ interface ExecutableManager2 {
 }
 
 inline fun <reified T : ExecutableType<*>> ExecutableManager2.getExecutable() = getExecutable(ExecutableType.getInstance<T>())
-suspend inline fun <reified T : ExecutableType<*>> ExecutableManager2.getExecutableAndValidate() = getExecutableAndValidate(ExecutableType.getInstance<T>(), false)
+suspend inline fun <reified T : ExecutableType<*>> ExecutableManager2.getExecutableAndValidate() = getExecutableAndValidate(ExecutableType.getInstance<T>())
 suspend inline fun <reified T : ExecutableType<*>> ExecutableManager2.setExecutablePath(path: Path) = setExecutablePath(ExecutableType.getInstance<T>(), path)
 
 private typealias ExecutableData = Triple<ExecutableState, ExecutableInstance?, FileTime?>
