@@ -9,6 +9,8 @@ import com.intellij.execution.process.ProcessHandler
 import com.intellij.execution.process.ProcessHandlerFactory
 import com.intellij.execution.runners.ExecutionEnvironment
 import com.intellij.openapi.util.io.FileUtil
+import com.jetbrains.rd.util.string.printToString
+import software.aws.toolkits.core.utils.getLogger
 import software.aws.toolkits.jetbrains.core.credentials.toEnvironmentVariables
 import software.aws.toolkits.jetbrains.core.executables.ExecutableInstance
 import software.aws.toolkits.jetbrains.core.executables.ExecutableManager
@@ -70,6 +72,9 @@ class SamRunningState(
 
         runner.patchCommandLine(commandLine)
 
+        LOG.info("running SAM with @@@@@@@@@@@@@@@")
+        LOG.info(commandLine.printToString())
+
         return ProcessHandlerFactory.getInstance().createColoredProcessHandler(commandLine)
     }
 
@@ -77,5 +82,9 @@ class SamRunningState(
         val eventFile = FileUtil.createTempFile("${environment.runProfile.name}-event", ".json", true)
         eventFile.writeText(settings.input)
         return eventFile.absolutePath
+    }
+
+    companion object {
+        val LOG = getLogger<SamRunningState>()
     }
 }
