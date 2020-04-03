@@ -64,32 +64,76 @@ sealed class LogStreamActor(
         for (message in channel) {
             when (message) {
                 is Message.LOAD_FORWARD -> if (!nextForwardToken.isNullOrEmpty()) {
-                    val items = loadMore(nextForwardToken, saveForwardToken = true)
-                    withContext(edtContext) { table.listTableModel.addRows(items) }
+                    try {
+                        table.setPaintBusy(true)
+                        val items = loadMore(nextForwardToken, saveForwardToken = true)
+                        if (items.isNotEmpty()) {
+                            withContext(edtContext) { table.listTableModel.addRows(items) }
+                        }
+                    } finally {
+                        table.setPaintBusy(false)
+                    }
                 }
                 is Message.LOAD_BACKWARD -> if (!nextBackwardToken.isNullOrEmpty()) {
-                    val items = loadMore(nextBackwardToken, saveBackwardToken = true)
-                    withContext(edtContext) { table.listTableModel.items = items + table.listTableModel.items }
+                    try {
+                        table.setPaintBusy(true)
+                        val items = loadMore(nextBackwardToken, saveBackwardToken = true)
+                        if (items.isNotEmpty()) {
+                            val newSelection = table.selectedRows.map { it + items.size }
+                            val newRow = table.rowAtPoint(table.visibleRect.location) + items.size
+                            val rect = table.getCellRect(newRow, 0, true)
+                            table.tableViewModel.fireTableDataChanged()
+                            table.listTableModel.items = items + table.listTableModel.items
+                            withContext(edtContext) {
+                                table.tableViewModel.fireTableDataChanged()
+                                table.scrollRectToVisible(rect)
+                                newSelection.forEach {
+                                    table.addRowSelectionInterval(it, it)
+                                }
+                            }
+                        }
+                    } finally {
+                        table.setPaintBusy(false)
+                    }
                 }
                 is Message.LOAD_INITIAL -> {
-                    loadInitial()
-                    // make sure the scroll pane is at the top after loading. Needed for Refresh!
-                    val rect = table.getCellRect(0, 0, true)
-                    withContext(edtContext) {
-                        table.scrollRectToVisible(rect)
+                    try {
+                        tableLoading()
+                        loadInitial()
+                        // make sure the scroll pane is at the top after loading. Needed for Refresh!
+                        val rect = table.getCellRect(0, 0, true)
+                        withContext(edtContext) {
+                            table.tableViewModel.fireTableDataChanged()
+                            table.scrollRectToVisible(rect)
+                        }
+                    } finally {
+                        table.setPaintBusy(false)
                     }
                 }
                 is Message.LOAD_INITIAL_RANGE -> {
-                    loadInitialRange(message.previousEvent.timestamp, message.duration)
-                    val item = table.listTableModel.items.firstOrNull { it == message.previousEvent }
-                    val index = table.listTableModel.indexOf(item).takeIf { it > 0 } ?: return
-                    withContext(edtContext) {
-                        table.setRowSelectionInterval(index, index)
-                        TableUtil.scrollSelectionToVisible(table)
+                    try {
+                        loadInitialRange(message.previousEvent.timestamp, message.duration)
+                        val item = table.listTableModel.items.firstOrNull { it == message.previousEvent }
+                        val index = table.listTableModel.indexOf(item).takeIf { it > 0 } ?: return
+                        withContext(edtContext) {
+                            table.tableViewModel.fireTableDataChanged()
+                            table.setRowSelectionInterval(index, index)
+                            TableUtil.scrollSelectionToVisible(table)
+                        }
+                    } finally {
+                        table.setPaintBusy(false)
                     }
                 }
                 is Message.LOAD_INITIAL_FILTER -> {
-                    loadInitialFilter(message.queryString)
+                    try {
+                        tableLoading()
+                        loadInitialFilter(message.queryString)
+                        withContext(edtContext) {
+                            table.tableViewModel.fireTableDataChanged()
+                        }
+                    } finally {
+                        table.setPaintBusy(false)
+                    }
                 }
             }
         }
@@ -97,7 +141,6 @@ sealed class LogStreamActor(
 
     protected suspend fun loadAndPopulate(loadBlock: suspend () -> List<LogStreamEntry>) {
         try {
-            tableLoading()
             val items = loadBlock()
             table.listTableModel.items = items
             table.emptyText.text = emptyText
@@ -111,8 +154,6 @@ sealed class LogStreamActor(
                 table.emptyText.text = tableErrorMessage
                 notifyError(title = tableErrorMessage, project = project)
             }
-        } finally {
-            tableDoneLoading()
         }
     }
 
@@ -124,11 +165,6 @@ sealed class LogStreamActor(
     private suspend fun tableLoading() = withContext(edtContext) {
         table.setPaintBusy(true)
         table.emptyText.text = message("loading_resource.loading")
-    }
-
-    private suspend fun tableDoneLoading() = withContext(edtContext) {
-        table.tableViewModel.fireTableDataChanged()
-        table.setPaintBusy(false)
     }
 
     override fun dispose() {
