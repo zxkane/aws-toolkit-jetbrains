@@ -3,8 +3,8 @@
 
 package software.aws.toolkits.jetbrains.services.cloudwatch.logs.editor
 
-import com.intellij.ui.components.JBLabel
-import com.intellij.ui.components.JBTextArea
+import com.intellij.ui.SimpleColoredComponent
+import com.intellij.ui.speedSearch.SpeedSearchUtil
 import com.intellij.util.text.DateFormatUtil
 import com.intellij.util.text.SyncDateFormat
 import com.intellij.util.ui.ColumnInfo
@@ -72,10 +72,14 @@ private class WrappingLogStreamMessageRenderer : TableCellRenderer {
     var wrap = false
 
     // JBTextArea has a different font from JBLabel (the default in a table) so harvest the font off of it
-    private val font = JBLabel().font
+    // private val font = JBLabel().font
 
-    override fun getTableCellRendererComponent(table: JTable, value: Any?, isSelected: Boolean, hasFocus: Boolean, row: Int, column: Int): Component {
-        val component = JBTextArea()
+    override fun getTableCellRendererComponent(table: JTable?, value: Any?, isSelected: Boolean, hasFocus: Boolean, row: Int, column: Int): Component {
+        val component = SimpleColoredComponent()
+
+        if (table == null) {
+            return component
+        }
 
         if (isSelected) {
             component.foreground = table.selectionForeground
@@ -85,15 +89,17 @@ private class WrappingLogStreamMessageRenderer : TableCellRenderer {
             component.background = table.background
         }
 
-        component.wrapStyleWord = wrap
-        component.lineWrap = wrap
-        component.text = (value as? String)?.trim()
-        component.font = font
+        // component.wrapStyleWord = wrap
+        //component.lineWrap = wrap
+        // component.text = (value as? String)?.trim()
+        (value as? String)?.trim()?.let { component.append(it) }
+        // component.font = font
 
         component.setSize(table.columnModel.getColumn(column).width, component.preferredSize.height)
         if (table.getRowHeight(row) != component.preferredSize.height) {
             table.setRowHeight(row, component.preferredSize.height)
         }
+        SpeedSearchUtil.applySpeedSearchHighlighting(table, component, true, isSelected)
         return component
     }
 }
